@@ -1,14 +1,19 @@
 package entity
 
 import (
+	"context"
+	"fmt"
 	"image"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"path"
 	"time"
 
 	"github.com/faiface/pixel/pixelgl"
+	"github.com/mongodb/mongo-go-driver/bson"
+	"github.com/terakilobyte/dungeon/chatbot"
 
 	"github.com/faiface/pixel"
 )
@@ -60,27 +65,31 @@ type Entity struct {
 	attackFrames []*pixel.Sprite
 	deadFrames   []*pixel.Sprite
 	currentFrame *pixel.Sprite
-	attackPower  float64
+	AttackPower  float64
 	Health       float64
-	name         string
+	Name         string
 
 	matrix         pixel.Matrix
+	startingMatrix pixel.Matrix
 	canMove        bool
 	canCombat      bool
 	State          State
 	defaultState   State
-	posX           float64
-	posY           float64
+	PosX           float64
+	PosY           float64
 	facing         FacingDirection
 	animationFrame int
 	deathFrame     int
+	SetRemoved     bool
+	startingHealth float64
+	startingV      pixel.Vec
 }
 
 // Update is called in the game loop
 func (e *Entity) Update(win *pixelgl.Window, dt float64) {
 	switch e.State {
 	case Moving:
-		e.posX += dt * 100
+		e.PosX += dt * 100
 		e.matrix = e.matrix.Moved(pixel.V(dt*100, 0))
 		e.currentFrame = e.walkFrames[e.animationFrame%len(e.walkFrames)]
 		e.currentFrame.Draw(win, e.matrix)
@@ -92,12 +101,15 @@ func (e *Entity) Update(win *pixelgl.Window, dt float64) {
 		e.currentFrame.Draw(win, e.matrix)
 	case Dead:
 		e.currentFrame = e.deadFrames[e.deathFrame%len(e.deadFrames)]
-		e.currentFrame.Draw(win, e.matrix)
 		e.deathFrame++
-		if e.deathFrame == len(e.deadFrames)-1 {
+		if e.deathFrame == len(e.deadFrames)+122 {
 			e.State = Remove
 			break
 		}
+		if e.deathFrame >= len(e.deadFrames)-1 {
+			e.currentFrame = e.deadFrames[len(e.deadFrames)-1]
+		}
+		e.currentFrame.Draw(win, e.matrix)
 	}
 }
 
@@ -112,31 +124,31 @@ func (e *Entity) DetectCollision(entities []*Entity, win *pixelgl.Window) {
 			continue
 		}
 		oMid := o.currentFrame.Frame().Center().ScaledXY(pixel.V(0.12, 0.12)).X / 2
-		left1 := e.posX - mid
-		right1 := e.posX + mid
-		left2 := o.posX - oMid
-		right2 := o.posX + oMid
+		left1 := e.PosX - mid
+		right1 := e.PosX + mid
+		left2 := o.PosX - oMid
+		right2 := o.PosX + oMid
 		if left1 > right2 || left2 > right1 || !o.canCombat {
 			e.State = e.defaultState
-		} else {
-			e.State = Combat
-			o.State = Combat
-			eAttack := rand.Float64() * e.attackPower
-			oAttack := rand.Float64() * o.attackPower
-			e.Health -= oAttack
-			o.Health -= eAttack
-			if e.Health <= 0 {
-				e.State = Dead
-				o.State = o.defaultState
-				break
-			}
-			if o.Health <= 0 {
-				o.State = Dead
-				e.State = e.defaultState
-				break
-			}
+			continue
+		}
+		e.State = Combat
+		o.State = Combat
+		eAttack := rand.Float64() * e.AttackPower
+		oAttack := rand.Float64() * o.AttackPower
+		e.Health -= oAttack
+		o.Health -= eAttack
+		if e.Health <= 0 {
+			e.State = Dead
+			o.State = o.defaultState
 			break
 		}
+		if o.Health <= 0 {
+			o.State = Dead
+			e.State = e.defaultState
+			break
+		}
+		break
 	}
 
 }
@@ -168,20 +180,23 @@ func (o *Options) New() *Entity {
 	mat = mat.ScaledXY(pixel.ZV, pixel.V(float64(o.Facing)*o.Scaling, o.Scaling))
 	mat = mat.Moved(o.StartingV)
 	e := &Entity{
-		canCombat:    o.CanCombat,
-		canMove:      o.CanMove,
-		State:        o.DefaultState,
-		defaultState: o.DefaultState,
-		matrix:       mat,
-		walkFrames:   walkFrames,
-		idleFrames:   idleFrames,
-		attackFrames: attackFrames,
-		deadFrames:   deadFrames,
-		posX:         o.StartingV.X,
-		posY:         o.StartingV.Y,
-		Health:       o.Health,
-		attackPower:  o.AttackPower,
-		name:         o.Name,
+		canCombat:      o.CanCombat,
+		canMove:        o.CanMove,
+		State:          o.DefaultState,
+		defaultState:   o.DefaultState,
+		matrix:         mat,
+		walkFrames:     walkFrames,
+		idleFrames:     idleFrames,
+		attackFrames:   attackFrames,
+		deadFrames:     deadFrames,
+		PosX:           o.StartingV.X,
+		PosY:           o.StartingV.Y,
+		Health:         o.Health,
+		AttackPower:    o.AttackPower,
+		Name:           o.Name,
+		startingMatrix: mat,
+		startingHealth: o.Health,
+		startingV:      o.StartingV,
 	}
 	ticker := time.NewTicker(33 * time.Millisecond)
 	go func() {
@@ -208,6 +223,51 @@ func gatherAssets(spriteDir string) ([]*pixel.Sprite, error) {
 		frames[i] = sprite
 	}
 	return frames, nil
+}
+
+func (hero *Entity) ResetHero(chat *chatbot.ChatClient) {
+	hero.ResetEntity(true)
+	go func(chat *chatbot.ChatClient, hero *Entity) {
+		res := &bson.D{}
+		elem := chat.Collection.FindOne(context.Background(), bson.D{{"user", hero.Name}})
+		if err := elem.Decode(res); err != nil {
+			fmt.Println(err, "No document found", hero.Name)
+		}
+		doc := res.Map()
+		dungeonRuns := 0.0
+		if losses, ok := doc["dungeonLosses"]; ok {
+			lossPool := float64(losses.(int64))
+			dungeonRuns += lossPool
+			hero.Health = hero.Health + lossPool*.25
+		}
+		if wins, ok := doc["dungeonWins"]; ok {
+			winPool := float64(wins.(int64))
+			dungeonRuns += winPool
+			hero.Health = hero.Health + winPool*0.5
+		}
+		apAddition := math.Log10(dungeonRuns) / math.Log10(60.0)
+
+		hero.AttackPower = hero.AttackPower + apAddition
+
+	}(chat, hero)
+
+}
+
+// ResetEntity resets the entity
+func (e *Entity) ResetEntity(force bool) {
+	e.matrix = e.startingMatrix
+	e.State = e.defaultState
+	if force || rand.Float64() < .5 {
+		e.State = e.defaultState
+		e.SetRemoved = false
+	} else {
+		e.State = Remove
+		e.SetRemoved = true
+	}
+	e.Health = rand.Float64()*100 + 50
+	e.PosX, e.PosY = e.startingV.XY()
+	e.deathFrame = 0
+	e.AttackPower = rand.Float64() * 3
 }
 
 func LoadPicture(path string) (pixel.Picture, error) {
