@@ -26,7 +26,7 @@ type commandArgs struct {
 type fn func(c *commandArgs) string
 
 func sourceCode(c *commandArgs) string {
-	c.client.Whisper(c.User.UserName, "https://github.com/terakilobyte/dungeon")
+	c.client.Whisper(c.user.Username, "https://github.com/terakilobyte/dungeon")
 	return ""
 }
 
