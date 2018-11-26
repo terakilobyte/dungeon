@@ -13,7 +13,6 @@ import (
 	"github.com/faiface/pixel/imdraw"
 	"github.com/faiface/pixel/pixelgl"
 	"github.com/faiface/pixel/text"
-	"github.com/martinlindhe/notify"
 	"github.com/mongodb/mongo-go-driver/bson"
 	"github.com/mongodb/mongo-go-driver/mongo/options"
 	"github.com/terakilobyte/dungeon/chatbot"
@@ -112,7 +111,6 @@ func run() {
 					numEnemiesAlive++
 				}
 			}
-			notify.Notify("dungeon", "A new dungeon begins...", fmt.Sprintf("Good luck %s", heroName), "")
 		} else if numEnemiesDead == numEnemiesAlive {
 			if !setScore {
 				go func(chat *chatbot.ChatClient, hero string) {

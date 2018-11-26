@@ -25,11 +25,6 @@ type commandArgs struct {
 
 type fn func(c *commandArgs) string
 
-func sourceCode(c *commandArgs) string {
-	c.client.Whisper(c.user.Username, "https://github.com/terakilobyte/dungeon")
-	return ""
-}
-
 func totalTime(c *commandArgs) string {
 	res := &bson.D{}
 	err := c.collection.FindOne(context.Background(), bson.D{{"user", c.user.DisplayName}}).Decode(res)
@@ -185,7 +180,7 @@ func optionsPoll(c *commandArgs) string {
 	return "No poll in progress"
 }
 func github(c *commandArgs) string {
-	return "https://github.com/terakilobyte/chatbot"
+	return "https://github.com/terakilobyte/dungeon"
 }
 
 type votePackage struct {
