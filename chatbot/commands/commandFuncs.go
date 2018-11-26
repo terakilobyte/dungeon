@@ -25,6 +25,11 @@ type commandArgs struct {
 
 type fn func(c *commandArgs) string
 
+func sourceCode(c *commandArgs) string {
+	c.client.Whisper(c.User.UserName, "https://github.com/terakilobyte/dungeon")
+	return ""
+}
+
 func totalTime(c *commandArgs) string {
 	res := &bson.D{}
 	err := c.collection.FindOne(context.Background(), bson.D{{"user", c.user.DisplayName}}).Decode(res)

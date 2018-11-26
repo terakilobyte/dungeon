@@ -51,6 +51,7 @@ func NewCommand(client *twitch.Client, twitchChannel string) *Command {
 		"github":     github,
 		"commands":   getCommands,
 		"mytime":     myTime,
+		"sourcecode": sourceCode,
 	}
 	return &Command{client, channel}
 }
