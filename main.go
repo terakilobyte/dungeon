@@ -50,7 +50,7 @@ func run() {
 		panic(err)
 	}
 
-	hero, enemies, numEnemiesAlive := initGame(chat)
+	hero, enemies, numEnemiesAlive, globalWinRate := initGame(chat)
 
 	last := time.Now()
 	gameOver := false
@@ -98,6 +98,25 @@ func run() {
 				if wins, ok := doc["dungeonWins"]; ok {
 					hero.Health = hero.Health + (float64(wins.(int64) * 2))
 				}
+				elem = chat.Collection.FindOne(context.Background(), bson.D{{"global", "stats"}})
+				if err := elem.Decode(res); err != nil {
+					fmt.Println(err, "No Document Found", "stats")
+				}
+				doc = res.Map()
+				globalWins := int64(0)
+				globalLosses := int64(0)
+				if wins, ok := doc["globalWins"]; ok {
+					globalWins += wins.(int64)
+				}
+				if losses, ok := doc["globalLosses"]; ok {
+					globalLosses += losses.(int64)
+				}
+
+				if globalLosses == 0 {
+					globalWinRate = 0
+				} else {
+					globalWinRate = float64(globalWins) / (float64(globalWins) + float64(globalLosses))
+				}
 			}(chat, hero)
 
 			if err != nil {
@@ -119,6 +138,10 @@ func run() {
 					filter := bson.D{{"user", hero}}
 					update := bson.D{{"$inc", bson.D{{"dungeonWins", 1}}}}
 					chat.Collection.UpdateOne(context.TODO(), filter, update, opts)
+					gFilter := bson.D{{"global", "stats"}}
+					gUpdate := bson.D{{"$inc", bson.D{{"globalWins", 1}}}}
+					chat.Collection.UpdateOne(context.Background(), gFilter, gUpdate, opts)
+
 				}(chat, hero.Name)
 				setScore = true
 			}
@@ -142,29 +165,24 @@ func run() {
 				}
 			}
 			hero.DetectCollision(enemies, win)
-			// health text
-			basicAtlas := text.NewAtlas(basicfont.Face7x13, text.ASCII)
-			basicTxt := text.New(pixel.V(100, 895), basicAtlas)
-			_, err := fmt.Fprintln(basicTxt, "Health")
-			if err != nil {
-				fmt.Println(err)
-			}
-			basicTxt.Draw(win, pixel.IM.Scaled(basicTxt.Orig, 3))
 
-			heroName := text.New(pixel.V(hero.PosX-50, hero.PosY+80), basicAtlas)
+			// hero name
+			basicAtlas := text.NewAtlas(basicfont.Face7x13, text.ASCII)
+			heroName := text.New(pixel.V(hero.PosX-20-((float64(len(hero.Name))/2)*12), hero.PosY+80), basicAtlas)
 			_, err = fmt.Fprintln(heroName, hero.Name)
 			if err != nil {
 				fmt.Println(err)
 			}
-
 			heroName.Draw(win, pixel.IM.Scaled(heroName.Orig, 2))
+
 			// health bar
 			imd := imdraw.New(nil)
 			imd.Color = colornames.Red
 			imd.EndShape = imdraw.RoundEndShape
-			imd.Push(pixel.V(100, 885), pixel.V(100+hero.Health, 885))
-			imd.Line(15)
+			imd.Push(pixel.V(hero.PosX-20-hero.Health/2, heroName.Orig.Y+25), pixel.V(hero.PosX-20+hero.Health/2, heroName.Orig.Y+25))
+			imd.Line(10)
 			imd.Draw(win)
+
 			if hero.Health <= 0 {
 				gameOver = true
 			}
@@ -176,6 +194,9 @@ func run() {
 					filter := bson.D{{"user", hero}}
 					update := bson.D{{"$inc", bson.D{{"dungeonLosses", 1}}}}
 					chat.Collection.UpdateOne(context.TODO(), filter, update, opts)
+					gFilter := bson.D{{"global", "stats"}}
+					gUpdate := bson.D{{"$inc", bson.D{{"globalLosses", 1}}}}
+					chat.Collection.UpdateOne(context.Background(), gFilter, gUpdate, opts)
 				}(chat, hero.Name)
 			}
 			setScore = true
@@ -190,6 +211,17 @@ func run() {
 			}
 			basicTxt.Draw(win, pixel.IM.Scaled(basicTxt.Orig, 7))
 		}
+		basicAtlas := text.NewAtlas(basicfont.Face7x13, text.ASCII)
+		rightWindow := pixel.Vec{}
+		rightWindow.X = win.Bounds().Center().X - 275
+		rightWindow.Y = win.Bounds().H() - 150
+		gwr := text.New(rightWindow, basicAtlas)
+		_, err := fmt.Fprintln(gwr, fmt.Sprintf("Global Win Rate: %f", globalWinRate))
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		gwr.Draw(win, pixel.IM.Scaled(gwr.Orig, 4))
 		win.Update()
 	}
 }
@@ -204,7 +236,7 @@ func getHeroName(client *chatbot.ChatClient) (string, error) {
 	return heroName, nil
 }
 
-func initGame(client *chatbot.ChatClient) (*entity.Entity, []*entity.Entity, int) {
+func initGame(client *chatbot.ChatClient) (*entity.Entity, []*entity.Entity, int, float64) {
 	heroName, err := getHeroName(client)
 	if err != nil {
 		heroName = "hero"
@@ -223,6 +255,7 @@ func initGame(client *chatbot.ChatClient) (*entity.Entity, []*entity.Entity, int
 		Facing:       entity.FacingRight,
 	}
 	hero := heroOpts.New()
+	globalWinRate := 0.
 	go func(chat *chatbot.ChatClient, hero *entity.Entity) {
 		res := &bson.D{}
 		elem := chat.Collection.FindOne(context.Background(), bson.D{{"user", hero.Name}})
@@ -243,6 +276,24 @@ func initGame(client *chatbot.ChatClient) (*entity.Entity, []*entity.Entity, int
 		}
 		apAddition := math.Log10(dungeonRuns) / math.Log10(60.0)
 		hero.AttackPower = hero.AttackPower + apAddition
+		elem = chat.Collection.FindOne(context.Background(), bson.D{{"global", "stats"}})
+		if err := elem.Decode(res); err != nil {
+			fmt.Println(err, "No Document Found", "stats")
+		}
+		doc = res.Map()
+		globalWins := int64(0)
+		globalLosses := int64(0)
+		if wins, ok := doc["globalWins"]; ok {
+			globalWins += wins.(int64)
+		}
+		if losses, ok := doc["globalLosses"]; ok {
+			globalLosses += losses.(int64)
+		}
+		if globalLosses == 0 {
+			globalWinRate = 0
+		} else {
+			globalWinRate = float64(globalWins) / (float64(globalWins) + float64(globalLosses))
+		}
 	}(client, hero)
 	enemies := entity.GenerateEnemies()
 	numEnemiesAlive := 0
@@ -251,7 +302,7 @@ func initGame(client *chatbot.ChatClient) (*entity.Entity, []*entity.Entity, int
 			numEnemiesAlive++
 		}
 	}
-	return hero, enemies, numEnemiesAlive
+	return hero, enemies, numEnemiesAlive, globalWinRate
 }
 
 func main() {
