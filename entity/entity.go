@@ -238,14 +238,14 @@ func (hero *Entity) ResetHero(chat *chatbot.ChatClient) {
 		if losses, ok := doc["dungeonLosses"]; ok {
 			lossPool := float64(losses.(int64))
 			dungeonRuns += lossPool
-			hero.Health = hero.Health + lossPool*.25
+			hero.Health = hero.Health + lossPool*.5
 		}
 		if wins, ok := doc["dungeonWins"]; ok {
 			winPool := float64(wins.(int64))
 			dungeonRuns += winPool
-			hero.Health = hero.Health + winPool*0.5
+			hero.Health = hero.Health + winPool*.25
 		}
-		apAddition := math.Log10(dungeonRuns) / math.Log10(60.0)
+		apAddition := math.Log10(dungeonRuns) / math.Log10(80.0)
 
 		hero.AttackPower = hero.AttackPower + apAddition
 
