@@ -179,7 +179,9 @@ func run() {
 			imd := imdraw.New(nil)
 			imd.Color = colornames.Red
 			imd.EndShape = imdraw.RoundEndShape
-			imd.Push(pixel.V(hero.PosX-20-hero.Health/2, heroName.Orig.Y+25), pixel.V(hero.PosX-20+hero.Health/2, heroName.Orig.Y+25))
+			clampLeft := pixel.Clamp(hero.PosX-hero.Health/2, hero.PosX-100, hero.PosX)
+			clampRight := pixel.Clamp(hero.PosX+hero.Health/2, hero.PosX, hero.PosX+100)
+			imd.Push(pixel.V(clampLeft, heroName.Orig.Y+25), pixel.V(clampRight, heroName.Orig.Y+25))
 			imd.Line(10)
 			imd.Draw(win)
 
